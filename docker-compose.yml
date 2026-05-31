@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: midas-digital-postgres
+    environment:
+      POSTGRES_DB: midas_digital
+      POSTGRES_USER: midas_digital
+      POSTGRES_PASSWORD: midas_digital
+    ports:
+      - "5433:5432"
+    volumes:
+      - midas-digital-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U midas_digital -d midas_digital"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  midas-digital-postgres-data:

@@ -1,0 +1,130 @@
+### ===================================================================
+###  Тестовые сценарии Midas Bank Digital для отчёта (скриншоты)
+###  Открыть в IntelliJ IDEA / Android Studio и запускать кнопкой ▶ слева.
+###  Перед запуском: docker compose up -d postgres  &&  ./gradlew :server:run
+###  Запускать на ЧИСТОЙ базе (docker compose down -v) — по порядку сверху вниз.
+### ===================================================================
+
+@host = http://localhost:8080
+@phone = +79990001122
+@pin = 1234
+@recipientPhone = +79990003344
+@recipientPin = 5678
+
+### --- Подготовка: регистрация получателя (не нумеруется в отчёте) ---
+POST {{host}}/api/v1/auth/register
+Content-Type: application/json
+
+{ "fullName": "Пётр Сидоров", "phone": "{{recipientPhone}}", "pin": "{{recipientPin}}" }
+
+> {% client.global.set("recipientToken", response.body.token); %}
+
+### --- Подготовка: карта получателя (для сценария 12) ---
+GET {{host}}/api/v1/cards
+Authorization: Bearer {{recipientToken}}
+
+> {% client.global.set("recipientCard", response.body.cards[0].cardNumber); %}
+
+### --- Подготовка: QR-реквизиты получателя (для сценария 13) ---
+### QR-нагрузку собираем из числовых реквизитов (без кавычек/пробелов),
+### чтобы тело JSON оставалось корректным; для перевода по QR нужны только эти поля.
+GET {{host}}/api/v1/wallet/requisites
+Authorization: Bearer {{recipientToken}}
+
+> {%
+  const q = response.body.requisites;
+  client.global.set("recipientQr",
+    "inn=" + q.inn + "|kpp=" + q.kpp + "|bik=" + q.bik +
+    "|account=" + q.account + "|correspondentAccount=" + q.correspondentAccount +
+    "|contractNumber=" + q.contractNumber);
+%}
+
+
+### ===== Сценарий 1: Регистрация пользователя =====
+POST {{host}}/api/v1/auth/register
+Content-Type: application/json
+
+{ "fullName": "Никита Никонов", "phone": "{{phone}}", "pin": "{{pin}}" }
+
+> {% client.global.set("token", response.body.token); %}
+
+### ===== Сценарий 2: Регистрация с занятым номером (ожидается 409) =====
+POST {{host}}/api/v1/auth/register
+Content-Type: application/json
+
+{ "fullName": "Никита Никонов", "phone": "{{phone}}", "pin": "{{pin}}" }
+
+### ===== Сценарий 3: Авторизация пользователя =====
+POST {{host}}/api/v1/auth/login
+Content-Type: application/json
+
+{ "phone": "{{phone}}", "pin": "{{pin}}" }
+
+> {% client.global.set("token", response.body.token); %}
+
+### ===== Сценарий 4: Вход с неверным ПИН-кодом (ожидается 401) =====
+POST {{host}}/api/v1/auth/login
+Content-Type: application/json
+
+{ "phone": "{{phone}}", "pin": "9999" }
+
+### ===== Сценарий 5: Доступ без токена (ожидается 401) =====
+GET {{host}}/api/v1/accounts
+
+### ===== Сценарий 6: Просмотр счетов =====
+GET {{host}}/api/v1/accounts
+Authorization: Bearer {{token}}
+
+### ===== Сценарий 7: Просмотр курсов валют =====
+GET {{host}}/api/v1/wallet/rates
+Authorization: Bearer {{token}}
+
+### ===== Сценарий 8: Перевод между своими счетами =====
+POST {{host}}/api/v1/accounts/transfer
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "fromType": "CURRENT", "toType": "SAVINGS", "amount": "100.00", "currency": "RUB" }
+
+### ===== Сценарий 9: Конвертация валют =====
+POST {{host}}/api/v1/wallet/convert
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "fromCurrency": "RUB", "toCurrency": "USD", "amount": "100.00" }
+
+### ===== Сценарий 10: Перевод по номеру телефона =====
+POST {{host}}/api/v1/transactions/transfer
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "recipientPhone": "{{recipientPhone}}", "amount": "50.00", "note": "тест" }
+
+### ===== Сценарий 11: Перевод суммы больше баланса (ожидается 422) =====
+POST {{host}}/api/v1/transactions/transfer
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "recipientPhone": "{{recipientPhone}}", "amount": "99999999.00", "note": "превышение" }
+
+### ===== Сценарий 12: Перевод по номеру карты =====
+POST {{host}}/api/v1/transactions/transfer/card
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "cardNumber": "{{recipientCard}}", "amount": "75.00" }
+
+### ===== Сценарий 13: Перевод по QR-коду =====
+POST {{host}}/api/v1/transactions/transfer/qr
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "qrPayload": "{{recipientQr}}", "amount": "25.00" }
+
+### ===== Сценарий 14a: История операций =====
+GET {{host}}/api/v1/transactions
+Authorization: Bearer {{token}}
+
+### ===== Сценарий 14b: Поиск операций =====
+GET {{host}}/api/v1/transactions/search?query=2200
+Authorization: Bearer {{token}}
